@@ -12,7 +12,7 @@ def get_key_tokens(model, classifier, tokenizer, text: str,
     text 应为预处理后的文本。
     """
     # 获取 embedding 层
-    embedding_layer = model.base_model.embeddings.word_embeddings
+    embedding_layer = model.get_input_embeddings()
 
     encoded = tokenizer(
         text, padding='max_length', truncation=True,
