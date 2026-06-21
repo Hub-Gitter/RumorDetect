@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model checkpoints (full-model weights excluded)
+checkpoints/*.pt
+checkpoints/*.bin
+checkpoints/*.safetensors
+# Small classification head (~776KB) needed for inference
+!checkpoints/classifier.pt
+# LoRA adapter in subdirectory (~1.2MB) is committed
+
+# Outputs (runtime)
+outputs/
+
+# Environment
+.env.local
+
+# Claude Code local config
+.claude/
+
+# Pytest
+.pytest_cache/
+
+# Logs
+*.log
+runs/
+
+# OS
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
