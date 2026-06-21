@@ -22,31 +22,46 @@ API_KEY = os.environ.get("SJTU_API_KEY", "")
 
 SYSTEM_PROMPT = (
     "You are a social media rumor detection expert. Your task is to explain "
-    "why a tweet was classified as rumor or non-rumor.\n\n"
-    "CRITICAL REQUIREMENT — you MUST quote at least TWO specific words or "
-    "phrases directly from the tweet as concrete evidence. Use the exact "
-    "wording with quotation marks. Explanations without quoted words from "
-    "the tweet are INVALID.\n\n"
-    "Additional requirements:\n"
-    "1. Write 2-3 sentences ONLY. No greetings, no prefixes, no bullet points.\n"
-    "2. For RUMOR: identify emotional/incendiary language, lack of official "
-    "sources, unverifiable claims, speculative wording (e.g. \"BREAKING\", "
-    "\"reportedly\", \"unconfirmed\"), or contradiction with known facts.\n"
-    "3. For NON-RUMOR: identify citations of credible sources, factual tone, "
-    "reporting of officially confirmed information, or measured/balanced language "
-    "(e.g. \"confirms\", \"according to\", \"official\").\n"
-    "4. The classifier's key evidence words are provided as guidance — use them "
-    "to anchor your analysis, but write in natural flowing sentences.\n\n"
-    "Examples of good explanations:\n"
-    '- RUMOR: The tweet uses "BREAKING" in all caps, a common clickbait tactic '
-    'that signals urgency without verification. The phrase "officer shot the teen" '
-    'presents an unverified claim as fact, and no source is cited.\n'
-    '- NON-RUMOR: The word "confirms" indicates an official announcement, and '
-    '"Swiss museum" names a specific credible institution. The measured tone '
-    'and lack of emotional language support credibility.\n'
-    '- RUMOR: The phrase "people are saying" relies on anonymous hearsay rather '
-    'than named sources. Words like "worst ever" show emotional exaggeration '
-    'typical of unverified rumors.'
+    "why a tweet was classified as rumor or non-rumor by analyzing its "
+    "specific linguistic choices.\n\n"
+    "CRITICAL REQUIREMENTS:\n"
+    "1. You MUST quote at least TWO specific words or phrases directly from "
+    "the tweet as concrete evidence, using quotation marks. Explanations "
+    "without quoted words from the tweet are INVALID.\n"
+    "2. Write 2-3 sentences ONLY. Start directly with analysis — do NOT "
+    "prepend \"Rumor:\", \"Non-rumor:\", \"RUMOR:\", \"NON-RUMOR:\", "
+    "or any label prefix. No greetings, no bullet points.\n"
+    "3. Focus on WHY the specific wording signals (non-)rumor — do NOT just "
+    "repeat the predicted label or describe what the tweet is about.\n\n"
+    "For RUMOR: point out speculative language (\"reportedly\", \"BREAKING\", "
+    "\"unconfirmed\"), emotional exaggeration (\"horrific\", \"worst ever\"), "
+    "anonymous sources (\"people are saying\"), or claims presented as fact "
+    "without attribution.\n\n"
+    "For NON-RUMOR: point out official sources (\"police confirmed\", "
+    "\"according to\"), specific named entities (organizations, locations), "
+    "measured language, or factual reporting tone without inflammatory words.\n\n"
+    "When classifier confidence is low (<70%): acknowledge that the tweet "
+    "contains mixed signals, and explain which elements point each way.\n\n"
+    "When classifier confidence is high (>90%): state clearly which specific "
+    "language patterns make this a clear-cut case.\n\n"
+    "DO NOT:\n"
+    "- Restate the label or confidence at the start (\"Rumor:\", \"Non-rumor:\")\n"
+    "- Use markdown formatting (**bold**, *italic*) in your explanation\n"
+    "- Mention importance scores or classifier internals (\"the model thinks…\")\n"
+    "- Use generic templates that could apply to any tweet\n"
+    "- Invent sources or facts not present in the tweet\n\n"
+    "EXAMPLES (note: no label prefix, direct analysis):\n"
+    '- The all-caps "BREAKING" creates false urgency '
+    'without verification, and "officer shot the teen" states an unverified '
+    'allegation as fact with no source cited. The absence of any official '
+    'attribution is a strong rumor indicator.\n'
+    '- "Police confirmed" directly cites an '
+    'official law enforcement source, and "according to the report" anchors '
+    'the claim in documentation. The neutral, factual phrasing avoids '
+    'emotional manipulation.\n'
+    '- While "police statement" suggests an official '
+    'source, the phrase "it is rumored that" introduces unverified information. '
+    'The tweet mixes credible attribution with speculative content.'
 )
 
 
@@ -109,17 +124,30 @@ def fallback_explain(label: int, key_tokens: list) -> str:
 def _build_user_message(text: str, label: int, confidence: float,
                         key_tokens: list) -> str:
     label_name = "Rumor" if label == 1 else "Non-rumor"
-    token_parts = []
+    token_names = []
     for t in key_tokens[:6]:
         name = t[0] if isinstance(t, tuple) else str(t)
-        score = t[1] if isinstance(t, tuple) and len(t) > 1 else 0.0
-        token_parts.append(f'"{name}" (importance: {score:.3f})')
-    tokens_str = ", ".join(token_parts)
+        token_names.append(name)
+    tokens_str = '", "'.join(token_names)
+    confidence_note = ""
+    if confidence < 0.7:
+        confidence_note = (
+            "\nNote: confidence is relatively low ({:.0f}%) — the tweet may "
+            "contain mixed signals. If so, acknowledge both sides in your "
+            "explanation."
+        ).format(confidence * 100)
+    elif confidence > 0.9:
+        confidence_note = (
+            "\nNote: confidence is high ({:.0f}%) — the language patterns "
+            "are clear-cut. Explain what makes this unambiguous."
+        ).format(confidence * 100)
     return (
         f'Tweet: "{text}"\n\n'
-        f"Classifier prediction: {label_name} (confidence: {confidence * 100:.1f}%)\n"
-        f"Most influential words: {tokens_str}\n\n"
-        f"Write a 2-3 sentence explanation quoting specific words from the tweet:"
+        f"Classifier prediction: {label_name} ({confidence * 100:.0f}% confidence)\n"
+        f'Key evidence words: "{tokens_str}"'
+        f"{confidence_note}\n\n"
+        f"Explain the classification in 2-3 sentences, quoting specific words "
+        f"from the tweet as evidence:"
     )
 
 
@@ -175,15 +203,26 @@ def batch_generate_explanations(items: list, batch_size: int = 5) -> list:
                 token_names = [t[0] if isinstance(t, tuple) else str(t)
                                for t in tokens]
                 tokens_str = ", ".join(f'"{t}"' for t in token_names)
+                conf_str = f"{conf*100:.0f}%"
+                if conf < 0.7:
+                    conf_str += " (low — check for mixed signals)"
+                elif conf > 0.9:
+                    conf_str += " (high — clear-cut case)"
                 batch_parts.append(
                     f"Tweet {j+1}: \"{text}\"\n"
-                    f"  Prediction: {label_name} (confidence: {conf*100:.1f}%)\n"
+                    f"  Prediction: {label_name} ({conf_str})\n"
                     f"  Key evidence: {tokens_str}"
                 )
 
             batch_prompt = (
-                "Analyze the following tweets. For each, provide a 2-sentence "
-                "explanation. Number your responses 1, 2, 3, ...:\n\n"
+                "For each tweet below, explain its classification in 2-3 "
+                "sentences. QUOTE at least two specific words/phrases from "
+                "each tweet as evidence. For RUMOR: identify speculative "
+                "language, lack of sources, or emotional exaggeration. For "
+                "NON-RUMOR: identify official sources, specific entities, "
+                "or factual tone. When confidence is low, note mixed signals. "
+                "Number your responses 1, 2, 3, ... with NO greetings or "
+                "prefixes:\n\n"
                 + "\n\n".join(batch_parts)
             )
 
