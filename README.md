@@ -113,7 +113,7 @@ rumer2026/
 ├── README.md
 ├── report.pdf                 # 大作业报告
 ├── requirements.txt
-├── .env.example               # API Key 配置模板
+├── .env                       # API Key 配置模板
 ├── data/
 │   ├── train.csv              # 训练集 (2840条)
 │   └── val.csv                # 验证集 (401条)
